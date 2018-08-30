@@ -19,6 +19,7 @@
 
 #define CDV_PHOTO_PREFIX @"cdv_photo_"
 #define CDV_THUMB_PREFIX @"cdv_thumb_"
+#define CDV_VIDEO_PREFIX @"cdv_video_"
 
 
 //Helper methods
@@ -78,6 +79,7 @@ NSString * const GMGridViewCellIdentifier = @"GMGridViewCellIdentifier";
     NSString* docsPath;
     int docCount;
     int doc_thumbCount;
+    int video_Count;
 }
 
 @synthesize dic_asset_fetches;
@@ -130,6 +132,7 @@ NSString * const GMGridViewCellIdentifier = @"GMGridViewCellIdentifier";
     docsPath = [NSTemporaryDirectory()stringByStandardizingPath];
     docCount = 0;
     doc_thumbCount = 0;
+    video_Count = 0;
     
     return self;
 }
@@ -199,12 +202,12 @@ NSString * const GMGridViewCellIdentifier = @"GMGridViewCellIdentifier";
                                     contentMode:PHImageContentModeAspectFill
                                         options:nil
                                   resultHandler:^(UIImage *result, NSDictionary *info)
-                                    {
-                                        // Only update the thumbnail if the cell tag hasn't changed. Otherwise, the cell has been re-used.
-                                        if (cell.tag == currentTag) {
-                                            [cell.imageView setImage:result];
-                                        }
-                                    }];
+         {
+             // Only update the thumbnail if the cell tag hasn't changed. Otherwise, the cell has been re-used.
+             if (cell.tag == currentTag) {
+                 [cell.imageView setImage:result];
+             }
+         }];
     }
     
     [self.collectionView setCollectionViewLayout:layout animated:YES];
@@ -304,7 +307,7 @@ NSString * const GMGridViewCellIdentifier = @"GMGridViewCellIdentifier";
 - (UICollectionViewCell *)collectionView:(UICollectionView *)collectionView cellForItemAtIndexPath:(NSIndexPath *)indexPath
 {
     GMGridViewCell *cell = [collectionView dequeueReusableCellWithReuseIdentifier:GMGridViewCellIdentifier
-                                                             forIndexPath:indexPath];
+                                                                     forIndexPath:indexPath];
     
     // Increment the cell's tag
     NSInteger currentTag = cell.tag + 1;
@@ -363,21 +366,21 @@ NSString * const GMGridViewCellIdentifier = @"GMGridViewCellIdentifier";
     //NSLog( @" cell : %ld ", (long)indexPath.item );
     
     /*if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad)
-    {
-        NSLog(@"Image manager: Requesting FIT image for iPad");
-        [self.imageManager requestImageForAsset:asset
-                                     targetSize:AssetGridThumbnailSize
-                                    contentMode:PHImageContentModeAspectFit
-                                        options:nil
-                                  resultHandler:^(UIImage *result, NSDictionary *info) {
-                                      
-                                      // Only update the thumbnail if the cell tag hasn't changed. Otherwise, the cell has been re-used.
-                                      if (cell.tag == currentTag) {
-                                          [cell.imageView setImage:result];
-                                      }
-                                  }];
-    }
-    else*/
+     {
+     NSLog(@"Image manager: Requesting FIT image for iPad");
+     [self.imageManager requestImageForAsset:asset
+     targetSize:AssetGridThumbnailSize
+     contentMode:PHImageContentModeAspectFit
+     options:nil
+     resultHandler:^(UIImage *result, NSDictionary *info) {
+     
+     // Only update the thumbnail if the cell tag hasn't changed. Otherwise, the cell has been re-used.
+     if (cell.tag == currentTag) {
+     [cell.imageView setImage:result];
+     }
+     }];
+     }
+     else*/
     {
         //NSLog(@"Image manager: Requesting FILL image for iPhone");
         [self.imageManager requestImageForAsset:asset
@@ -403,7 +406,7 @@ NSString * const GMGridViewCellIdentifier = @"GMGridViewCellIdentifier";
                                           dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
                                               
                                               fetch_item.be_saving_img_thumb = false;
-                                            
+                                              
                                               // TODO pass in quality
                                               if ( ![ UIImageJPEGRepresentation(result, 1.0f ) writeToFile:filePath atomically:YES ] ) {
                                                   return;
@@ -415,16 +418,14 @@ NSString * const GMGridViewCellIdentifier = @"GMGridViewCellIdentifier";
                                       }
                                       
                                       /*GMGridViewCell *cell = (GMGridViewCell *)[collectionView cellForItemAtIndexPath:indexPath];
-                                      
-                                      if ( cell ) {
-                                          [cell.imageView setImage:result];
-                                      }
-                                      NSLog( @"%d", indexPath.item );*/
+                                       
+                                       if ( cell ) {
+                                       [cell.imageView setImage:result];
+                                       }
+                                       NSLog( @"%d", indexPath.item );*/
                                       
                                   }];
     }
-    
-    
     
     return cell;
 }
@@ -447,7 +448,42 @@ NSString * const GMGridViewCellIdentifier = @"GMGridViewCellIdentifier";
     if ( cell == nil || fetch_item==nil || fetch_item.be_progressed ) {
         return NO;
     }
- 
+    
+    if ( fetch_item.be_saving_video == false && fetch_item.video == nil) {
+        if (asset.mediaType == 2) {
+            
+            fetch_item.be_saving_video = true;
+            
+            PHVideoRequestOptions *ph_options = [[PHVideoRequestOptions alloc] init];
+            
+            [ ph_options setNetworkAccessAllowed:YES];
+            
+            // @BVL Set Deliverymode, in order to return highest quality
+            [ ph_options setDeliveryMode: PHVideoRequestOptionsDeliveryModeHighQualityFormat ]; // Best Quality
+            
+            // for videos? ======
+            [ self.imageManager requestAVAssetForVideo:asset
+                                               options:ph_options
+                                         resultHandler:^(AVAsset *avAsset, AVAudioMix *avAudioMix, NSDictionary *info) {
+                                             
+                                             NSString *filePath;
+                                             
+                                             do {
+                                                 filePath = [NSString stringWithFormat:@"%@/%@%03d.%@", docsPath, CDV_VIDEO_PREFIX, video_Count++, @"MOV"];
+                                             } while ([fileMgr fileExistsAtPath:filePath]);
+                                             
+                                             NSError * error = nil;
+                                             
+                                             AVURLAsset *urlAsset = (AVURLAsset*)avAsset;
+                                             [self->fileMgr copyItemAtPath: urlAsset.URL.path toPath: filePath error:&error];
+                                             
+                                             fetch_item.be_saving_video = false;
+                                             fetch_item.video = filePath;
+                                         }];
+            
+        }
+    }
+    
     if ( fetch_item.be_saving_img == false && fetch_item.image_fullsize == nil  ) {
         
         fetch_item.be_progressed = true;
@@ -459,7 +495,7 @@ NSString * const GMGridViewCellIdentifier = @"GMGridViewCellIdentifier";
         
         // @BVL Set Deliverymode, in order to return highest quality
         [ ph_options setDeliveryMode: PHImageRequestOptionsDeliveryModeHighQualityFormat ]; // Best Quality
-
+        
         [ ph_options setProgressHandler:^(double progress, NSError *error, BOOL *stop, NSDictionary *info) {
             
             fetch_item.percent = progress;
@@ -473,7 +509,7 @@ NSString * const GMGridViewCellIdentifier = @"GMGridViewCellIdentifier";
         }];
         
         
-            
+        // ============= for images
         [ self.imageManager requestImageForAsset:asset targetSize:PHImageManagerMaximumSize contentMode:PHImageContentModeDefault options:ph_options resultHandler:^(UIImage *result, NSDictionary *info) {
             
             //dispatch_async(dispatch_get_main_queue(), ^{
@@ -502,16 +538,16 @@ NSString * const GMGridViewCellIdentifier = @"GMGridViewCellIdentifier";
                 
                 // @BVL: Added orientation-fix to correctly display the returned result
                 
-//              if ( ![ UIImageJPEGRepresentation(result, 1.0f ) writeToFile:filePath atomically:YES ] ) {
-//                  return;
-//              }
+                //              if ( ![ UIImageJPEGRepresentation(result, 1.0f ) writeToFile:filePath atomically:YES ] ) {
+                //                  return;
+                //              }
                 
                 NSLog(@"original orientation: %ld",(UIImageOrientation)result.imageOrientation);
                 
                 UIImage *imageToDisplay = result.fixOrientation; //  UIImage+fixOrientation extension
                 
                 NSLog(@"corrected orientation: %ld",(UIImageOrientation)imageToDisplay.imageOrientation);
-
+                
                 // setting compression to a low value (high compression) impact performance, but not actual img quality
                 if ( ![ UIImageJPEGRepresentation(imageToDisplay, 0.2f ) writeToFile:filePath atomically:YES ] ) {
                     return;
@@ -527,7 +563,7 @@ NSString * const GMGridViewCellIdentifier = @"GMGridViewCellIdentifier";
                     if ( cell ) {
                         [cell hide_fetching];
                     }
-
+                    
                     //Your main thread code goes in here
                     [ collectionView selectItemAtIndexPath:indexPath animated:NO scrollPosition:UICollectionViewScrollPositionNone ];
                     [ self collectionView:collectionView didSelectItemAtIndexPath:indexPath ];
@@ -537,7 +573,6 @@ NSString * const GMGridViewCellIdentifier = @"GMGridViewCellIdentifier";
             //});
             
         }];
-        
         
         return NO;
     }
